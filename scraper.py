@@ -21,7 +21,7 @@ TARGET_WINDOWS = {
     12: "12pm",
     15: "3pm",
     18: "6pm",
-    21: "9pm",
+    22: "9pm",
 }
 
 WINDOW_SPAN_MIN = 15  # 15 minutes before & after
