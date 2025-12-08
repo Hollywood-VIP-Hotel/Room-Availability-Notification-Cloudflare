@@ -1,9 +1,9 @@
 name: Room Availability Notification
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual triggers (optional)
+  repository_dispatch:
+    types: [external-trigger]  # This is the event type your Cloudflare Worker will send
 
 jobs:
   scrape-and-notify:
