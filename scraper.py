@@ -19,7 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 TARGET_WINDOWS = {
     8:  "8am",
     12: "12pm",
-    16: "3pm",
+    15: "3pm",
     18: "6pm",
     21: "9pm",
 }
