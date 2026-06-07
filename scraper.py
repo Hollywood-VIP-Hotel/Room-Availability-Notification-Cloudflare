@@ -21,12 +21,13 @@ TARGET_WINDOWS = {
     9:  "9am",
     12: "12pm",
     15: "3pm",
+    17: "5pm"
     18: "6pm",
     21: "9pm",
     23: "11pm",
 }
 
-WINDOW_SPAN_MIN = 15  # 15 minutes before & after
+WINDOW_SPAN_MIN = 30  # 15 minutes before & after
 
 
 def get_current_window_label():
