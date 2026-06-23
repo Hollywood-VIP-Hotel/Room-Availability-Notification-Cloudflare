@@ -34,7 +34,5 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run scraper (non-headless Chrome via Xvfb)
-        env:
-          MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
         run: |
           xvfb-run -a python scrapertest.py
