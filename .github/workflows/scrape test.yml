@@ -1,0 +1,40 @@
+name: Room Availability Notification Cloudflare
+
+on:
+  workflow_dispatch:  # Allows manual triggers (optional)
+  repository_dispatch:
+    types: [external-trigger]  # This is the event type your Cloudflare Worker will send
+
+jobs:
+  scrape-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install system dependencies (Chrome + Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb wget gnupg
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scraper (non-headless Chrome via Xvfb)
+        env:
+          MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
+        run: |
+          xvfb-run -a python scrapertest.py
