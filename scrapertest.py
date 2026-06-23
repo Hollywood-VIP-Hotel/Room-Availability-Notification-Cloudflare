@@ -84,9 +84,3 @@ num3 = get_stable_value("#leftroom_2")
 total = num1 + num2 + num3
 
 print(f"[SUCCESS] FINAL ROOM AVAILABILITY: {num1} + {num2} + {num3} = {total}")
-
-driver.quit()
-
-        print(f"[ERROR] Webhook error {response.status_code}: {response.text}")
-except Exception as e:
-    print(f"[ERROR] Failed to send webhook: {e}")
