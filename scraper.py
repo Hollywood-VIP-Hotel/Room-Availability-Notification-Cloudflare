@@ -1,15 +1,8 @@
 import os
-import time
 import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 
 # -------------------------------------------------------------
@@ -66,84 +59,75 @@ print(f"[INFO] Inside allowed window: {window_label}")
 
 
 # -------------------------------------------------------------
-# Selenium & scraping logic (unchanged)
+# eZee Centrix API call (replaces Selenium scraping)
 # -------------------------------------------------------------
-URL = "https://live.ipms247.com/booking/book-rooms-hollywoodviphotel"
+API_URL = "https://live.ipms247.com/pmsinterface/getdataAPI.php"
 
-options = Options()
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--no-sandbox")
-options.add_argument(
-    "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
-)
+HOTEL_CODE = os.environ.get("EZEE_HOTEL_CODE")
+AUTH_CODE = os.environ.get("EZEE_AUTH_CODE")
 
-driver = webdriver.Chrome(options=options)
-wait = WebDriverWait(driver, 30)
-
-
-try:
-    print("[INFO] Loading page...")
-    driver.get(URL)
-
-    print("[INFO] Waiting for booking engine container (#eZ_BookingRooms)...")
-    wait.until(EC.presence_of_element_located((By.ID, "eZ_BookingRooms")))
-
-    time.sleep(3)
-
-except Exception as e:
-    print("[ERROR] Could not load initial page or container:", e)
-    driver.quit()
+if not HOTEL_CODE or not AUTH_CODE:
+    print("[ERROR] Missing EZEE_HOTEL_CODE or EZEE_AUTH_CODE environment variable.")
     exit(1)
 
 
-def get_stable_value(css_selector):
-    print(f"[INFO] Checking for element {css_selector}...")
+def fetch_inventory(from_date: str, to_date: str) -> str:
+    body = f"""<RES_Request>
+    <Request_Type>Inventory</Request_Type>
+    <Authentication>
+        <HotelCode>{HOTEL_CODE}</HotelCode>
+        <AuthCode>{AUTH_CODE}</AuthCode>
+    </Authentication>
+    <FromDate>{from_date}</FromDate>
+    <ToDate>{to_date}</ToDate>
+</RES_Request>"""
 
-    try:
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, css_selector)))
-    except:
-        print(f"[WARN] Element {css_selector} not found — treating as 0")
-        return 0
-
-    stable_count = 0
-    last_value = None
-
-    for _ in range(30):
-        try:
-            text = driver.find_element(By.CSS_SELECTOR, css_selector).text.strip()
-
-            if text.isdigit():
-                if last_value is None:
-                    last_value = text
-                elif text == last_value:
-                    stable_count += 1
-                    if stable_count >= 2:
-                        return int(text)
-                else:
-                    stable_count = 0
-                    last_value = text
-        except:
-            pass
-
-        time.sleep(1)
-
-    return int(last_value or 0)
+    resp = requests.post(
+        API_URL,
+        data=body,
+        headers={"Content-Type": "application/xml"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.text
 
 
-num1 = get_stable_value("#leftroom_0")
-num2 = get_stable_value("#leftroom_1")
-num3 = get_stable_value("#leftroom_2")
-total = num1 + num2 + num3
+def parse_total_availability(xml_text: str) -> int:
+    """Sum Availability across all RoomType entries in the response."""
+    root = ET.fromstring(xml_text)
 
-print(f"[SUCCESS] FINAL ROOM AVAILABILITY: {num1} + {num2} + {num3} = {total}")
+    error_el = root.find("Errors")
+    if error_el is not None:
+        code = error_el.findtext("ErrorCode")
+        message = error_el.findtext("ErrorMessage")
+        raise RuntimeError(f"eZee API error {code}: {message}")
 
-driver.quit()
+    total = 0
+    for rt in root.findall(".//RoomType"):
+        total += int(rt.findtext("Availability", default="0"))
+
+    return total
+
+
+try:
+    print("[INFO] Calling eZee Centrix API...")
+
+    today = datetime.now(ZoneInfo("America/Los_Angeles")).date()
+    from_date = today.isoformat()
+    to_date = today.isoformat()  # same-day snapshot, matching the old scraper's "right now" numbers
+
+    xml_response = fetch_inventory(from_date, to_date)
+    total = parse_total_availability(xml_response)
+
+    print(f"[SUCCESS] FINAL ROOM AVAILABILITY: {total}")
+
+except Exception as e:
+    print("[ERROR] Failed to fetch/parse inventory:", e)
+    exit(1)
 
 
 # -------------------------------------------------------------
-# Send to Make webhook (includes window label)
+# Send to Make webhook (includes window label) — unchanged
 # -------------------------------------------------------------
 webhook_url = os.environ.get("MAKE_WEBHOOK_URL")
 
