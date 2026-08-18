@@ -66,8 +66,21 @@ API_URL = "https://live.ipms247.com/pmsinterface/getdataAPI.php"
 HOTEL_CODE = os.environ.get("EZEE_HOTEL_CODE")
 AUTH_CODE = os.environ.get("EZEE_AUTH_CODE")
 
+# Only these RoomTypeIDs are confirmed, active categories.
+# ID ending in ...0001 is unidentified/stale per Yanolja support (2026-08) and
+# is deliberately excluded so it can never silently affect the total again.
+KNOWN_ROOM_TYPE_IDS = {
+    os.environ.get("EZEE_ROOM_TYPE_ID_1"),
+    os.environ.get("EZEE_ROOM_TYPE_ID_2"),
+    os.environ.get("EZEE_ROOM_TYPE_ID_3"),
+}
+
 if not HOTEL_CODE or not AUTH_CODE:
     print("[ERROR] Missing EZEE_HOTEL_CODE or EZEE_AUTH_CODE environment variable.")
+    exit(1)
+
+if None in KNOWN_ROOM_TYPE_IDS or len(KNOWN_ROOM_TYPE_IDS) != 3:
+    print("[ERROR] Missing one or more EZEE_ROOM_TYPE_ID_1/2/3 environment variables.")
     exit(1)
 
 
@@ -93,7 +106,7 @@ def fetch_inventory(from_date: str, to_date: str) -> str:
 
 
 def parse_total_availability(xml_text: str) -> int:
-    """Sum Availability across all RoomType entries in the response."""
+    """Sum Availability only across the confirmed, known RoomTypeIDs."""
     root = ET.fromstring(xml_text)
 
     error_el = root.find("Errors")
@@ -102,9 +115,25 @@ def parse_total_availability(xml_text: str) -> int:
         message = error_el.findtext("ErrorMessage")
         raise RuntimeError(f"eZee API error {code}: {message}")
 
+    sources = root.findall(".//Source")
+    if not sources:
+        return 0
+
+    seen_ids = set()
     total = 0
-    for rt in root.findall(".//RoomType"):
-        total += int(rt.findtext("Availability", default="0"))
+    for rt in sources[0].findall(".//RoomType"):
+        room_type_id = rt.findtext("RoomTypeID")
+        seen_ids.add(room_type_id)
+        if room_type_id in KNOWN_ROOM_TYPE_IDS:
+            total += int(rt.findtext("Availability", default="0"))
+
+    unexpected = seen_ids - KNOWN_ROOM_TYPE_IDS
+    if unexpected:
+        print(f"[WARN] Ignored unrecognized RoomTypeID(s) not in the known list: {unexpected}")
+
+    missing = KNOWN_ROOM_TYPE_IDS - seen_ids
+    if missing:
+        print(f"[WARN] Expected RoomTypeID(s) not found in response: {missing}")
 
     return total
 
