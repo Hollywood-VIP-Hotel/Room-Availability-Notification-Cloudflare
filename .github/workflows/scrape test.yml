@@ -20,5 +20,8 @@ jobs:
           MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
           EZEE_HOTEL_CODE: ${{ secrets.EZEE_HOTEL_CODE }}
           EZEE_AUTH_CODE: ${{ secrets.EZEE_AUTH_CODE }}
+          EZEE_ROOM_TYPE_ID_1: ${{ secrets.EZEE_ROOM_TYPE_ID_1 }}
+          EZEE_ROOM_TYPE_ID_2: ${{ secrets.EZEE_ROOM_TYPE_ID_2 }}
+          EZEE_ROOM_TYPE_ID_3: ${{ secrets.EZEE_ROOM_TYPE_ID_3 }}
         run: |
           python scrapertest.py
