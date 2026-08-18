@@ -16,8 +16,21 @@ API_URL = "https://live.ipms247.com/pmsinterface/getdataAPI.php"
 HOTEL_CODE = os.environ.get("EZEE_HOTEL_CODE")
 AUTH_CODE = os.environ.get("EZEE_AUTH_CODE")
 
+# Only these RoomTypeIDs are confirmed, active categories.
+# ID ending in ...0001 is unidentified/stale per Yanolja support (2026-08) and
+# is deliberately excluded so it can never silently affect the total again.
+KNOWN_ROOM_TYPE_IDS = {
+    os.environ.get("EZEE_ROOM_TYPE_ID_1"),
+    os.environ.get("EZEE_ROOM_TYPE_ID_2"),
+    os.environ.get("EZEE_ROOM_TYPE_ID_3"),
+}
+
 if not HOTEL_CODE or not AUTH_CODE:
     print("[ERROR] Missing EZEE_HOTEL_CODE or EZEE_AUTH_CODE environment variable.")
+    exit(1)
+
+if None in KNOWN_ROOM_TYPE_IDS or len(KNOWN_ROOM_TYPE_IDS) != 3:
+    print("[ERROR] Missing one or more EZEE_ROOM_TYPE_ID_1/2/3 environment variables.")
     exit(1)
 
 
@@ -60,13 +73,40 @@ def parse_inventory(xml_text: str):
         message = error_el.findtext("ErrorMessage")
         raise RuntimeError(f"eZee API error {code}: {message}")
 
+    # The response can include multiple <Source> blocks (e.g. one per
+    # sales channel: OTA pool, direct website widget, etc.) that report
+    # the same underlying inventory. Only read the first Source to avoid
+    # double-counting the same rooms multiple times.
+    sources = root.findall(".//Source")
+    if not sources:
+        return 0, []
+
+    if len(sources) > 1:
+        source_names = [s.get("name", "unnamed") for s in sources]
+        print(f"[WARN] Multiple <Source> blocks found: {source_names}. "
+              f"Using only the first one ('{source_names[0]}') to avoid double-counting.")
+
     breakdown = []
+    seen_ids = set()
     total = 0
-    for rt in root.findall(".//RoomType"):
+    for rt in sources[0].findall(".//RoomType"):
         room_type_id = rt.findtext("RoomTypeID")
         availability = int(rt.findtext("Availability", default="0"))
-        breakdown.append((room_type_id, availability))
-        total += availability
+        seen_ids.add(room_type_id)
+
+        is_known = room_type_id in KNOWN_ROOM_TYPE_IDS
+        breakdown.append((room_type_id, availability, is_known))
+
+        if is_known:
+            total += availability
+
+    unexpected = seen_ids - KNOWN_ROOM_TYPE_IDS
+    if unexpected:
+        print(f"[WARN] Ignored unrecognized RoomTypeID(s) not in the known list: {unexpected}")
+
+    missing = KNOWN_ROOM_TYPE_IDS - seen_ids
+    if missing:
+        print(f"[WARN] Expected RoomTypeID(s) not found in response: {missing}")
 
     return total, breakdown
 
@@ -82,8 +122,9 @@ try:
     total, breakdown = parse_inventory(xml_response)
 
     print("[INFO] Per-room-type breakdown:")
-    for room_type_id, availability in breakdown:
-        print(f"    RoomTypeID {room_type_id}: {availability}")
+    for room_type_id, availability, is_known in breakdown:
+        tag = "counted" if is_known else "IGNORED (unrecognized)"
+        print(f"    RoomTypeID {room_type_id}: {availability}  [{tag}]")
 
     print(f"[SUCCESS] FINAL ROOM AVAILABILITY: {total}")
 
