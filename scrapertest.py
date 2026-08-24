@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -63,9 +64,32 @@ def fetch_inventory(from_date: str, to_date: str) -> str:
     return resp.text
 
 
-def parse_inventory(xml_text: str):
-    """Return (total, breakdown_list) or raise on API-level error."""
-    root = ET.fromstring(xml_text)
+def parse_inventory(response_text: str):
+    """Return (total, breakdown_list) for known RoomTypeIDs only; raises on API-level error.
+
+    The API normally returns XML, but some error conditions (e.g. auth
+    failures) come back as a JSON body instead, e.g.:
+        {"Errors": {"ErrorCode": "611", "ErrorMessage": "..."}}
+    Check for that first so these surface as a clear error rather than
+    an opaque XML parse failure.
+    """
+    stripped = response_text.strip()
+
+    if stripped.startswith("{"):
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError:
+            raise RuntimeError(f"eZee API returned an unrecognized non-XML response: {stripped[:300]}")
+
+        error = data.get("Errors")
+        if error:
+            code = error.get("ErrorCode")
+            message = error.get("ErrorMessage")
+            raise RuntimeError(f"eZee API error {code}: {message}")
+
+        raise RuntimeError(f"eZee API returned unexpected JSON: {stripped[:300]}")
+
+    root = ET.fromstring(response_text)
 
     error_el = root.find("Errors")
     if error_el is not None:
